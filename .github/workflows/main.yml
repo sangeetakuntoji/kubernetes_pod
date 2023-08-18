@@ -1,0 +1,49 @@
+name: Build Linux Container Image and Push to ACR
+
+#on:
+ # workflow_dispatch:
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: dotnet
+    steps:
+    - uses: actions/checkout@v2
+    - uses: azure/docker-login@v1
+      with:
+        login-server: samplecontaineracr001.azurecr.io
+        username: ${{ secrets.REGISTRY_USERNAME }}
+        password: ${{ secrets.REGISTRY_PASSWORD }}
+    - run: |
+        docker build . -t samplecontaineracr001.azurecr.io/dotnet:v1:${{ github.sha }} 
+        docker push samplecontaineracr001.azurecr.io/dotnet:v1:${{ github.sha }}
+        
+    - uses: azure/setup-kubectl@v2.0
+
+         # Set the target AKS cluster.
+    - uses: Azure/aks-set-context@v1
+      with:
+          creds: '${{ secrets.AZURE_CREDENTIALS }}'
+          cluster-name: testkubernetcluster01
+          resource-group: dev-rg
+
+    - uses: Azure/k8s-create-secret@v1.1
+      with:
+          container-registry-url: samplecontaineracr001.azurecr.io
+          container-registry-username: ${{ secrets.REGISTRY_USERNAME }}
+          container-registry-password: ${{ secrets.REGISTRY_PASSWORD }}
+          secret-name: demo-k8s-secret
+
+    - uses: Azure/k8s-deploy@v4
+      with:
+          action: deploy
+          manifests: |
+            manifests/deployment.yml
+              manifests/service.yml
+              images: |
+                 demo.azurecr.io/k8sdemo:${{ github.sha }}
+              imagepullsecrets: |
+                 demo-k8s-secret
